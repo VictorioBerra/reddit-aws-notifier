@@ -1,6 +1,6 @@
 {
   "name": "reddit-aws-notifier",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Scan a subreddit for posts that match an expression, and be notified via AWS SNS.",
   "main": "index.js",
   "bin": {

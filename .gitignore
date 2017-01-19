@@ -46,7 +46,6 @@ jspm_packages
 # Yarn Integrity file
 .yarn-integrity
 
-knexfile.js
 dev.sqlite3
 
 config.json

@@ -10,6 +10,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "postversion": "git push && git push --tags && npm publish"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VictorioBerra/reddit-aws-notifier"
+  },
   "author": {
     "name": "Victorio Berra",
     "email": "toryberra@gmail.com"

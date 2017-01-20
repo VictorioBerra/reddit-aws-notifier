@@ -6,6 +6,7 @@ var winston = require("winston");
 var Promise = require("bluebird");
 var AWS = require("aws-sdk");
 var format = require("util").format;
+const url = require('url');
 
 var argv = require('yargs')
     .options(require('./lib/options.js'))
@@ -29,6 +30,7 @@ var logger = new(winston.Logger)({
 });
 
 var notificationCount = 0;
+var requestCount = 0;
 
 var knex = require("knex")(require(argv.knexfile)[process.env.NODE_ENV || 'development']);
 
@@ -39,62 +41,86 @@ if (!argv.nofity) {
     });
 }
 
-setTimeout(function() {
-    knex.migrate.latest().then(function() {
-        var targetJsonURI = format('https://www.reddit.com/r/%s/%s/.json', argv.subreddit, argv.type);
-        logger.info('Requesting posts from ' + targetJsonURI);
-        bhttp.get(targetJsonURI).then(function(response) {
-                return Promise.each(response.body.data.children, function(post) {
-                    
-                    var expression = new RegExp(argv.expression, argv.expressionOptions);
+knex.migrate.latest().then(function() {
+    execute();
+});
 
-                    var titleHit = argv.title && post.data.title.match(expression) != null;
-                    var selfTextHit = argv.selftext && post.data.title.match(expression) != null;
-                    var authorHit = argv.author && post.data.title.match(expression) != null;
+function execute(lastPostId) {
 
-                    if (titleHit || selfTextHit || authorHit) {
-                        post.data.shortUrl = format('https://redd.it/%s', post.data.id);
-                        logger.info(format('Matches found in: %s%s%s. %s',
-                            (titleHit ? 'Title ' : ''),
-                            (selfTextHit ? 'Selftext ' : ''),
-                            (authorHit ? 'Author ' : ''),
-                            post.data.shortUrl));
+    var targetJsonURI = format('https://www.reddit.com/r/%s/%s/.json', argv.subreddit, argv.type);
+    if (lastPostId) {
+        var count = 25 * requestCount;
+        targetJsonURI += format('?count=%s&after=t3_%s', count, lastPostId);
+    }
 
-                        return knex('posts').where({
-                                id: post.data.id
-                            }).count()
-                            .then(isHit)
-                            .then(function(alreadyNotified) {
-                                if (!alreadyNotified) {
-                                    if (!argv.notify || notificationCount > argv.threshold) {
-                                        logger.info('Skipping notifications: supressed via commandline or threshold met.');
-                                        return insertPost(post.data.id, new Date(), '', '');
-                                    }
-                                    else {
-                                        var compiled = _.template(argv.template);
-                                        var notificationMessage = compiled(post);
-                                        logger.info('Notifying. Message: ' + notificationMessage);
-                                        return sns.publish({
-                                            Message: notificationMessage,
-                                            TopicArn: argv.topicarn
-                                        }).promise().then(function(snsResponse) {
-                                            notificationCount++;
-                                            return insertPost(post.data.id, new Date(), snsResponse.MessageId, snsResponse.ResponseMetadata.RequestId);
-                                        });
-                                    }
-                                }
-                                else {
-                                    logger.info('Skipping notifications: already notified.');
-                                }
-                            });
-                    }
-                });
+    setTimeout(function() {
+        return bhttp.get(targetJsonURI)
+            .then(function(response) {
+                requestCount++;
+                logger.info('Requesting posts from ' + targetJsonURI);
+                bhttp.get(targetJsonURI).then(function(response) {
+                        return Promise.each(response.body.data.children, function(post) {
+
+                            var expression = new RegExp(argv.expression, argv.expressionOptions);
+
+                            var titleHit = argv.title && post.data.title.match(expression) != null;
+                            var selfTextHit = argv.selftext && post.data.title.match(expression) != null;
+                            var authorHit = argv.author && post.data.title.match(expression) != null;
+
+                            if (titleHit || selfTextHit || authorHit) {
+                                post.data.shortUrl = format('https://redd.it/%s', post.data.id);
+                                logger.info(format('Matches found in: %s%s%s. %s',
+                                    (titleHit ? 'Title ' : ''),
+                                    (selfTextHit ? 'Selftext ' : ''),
+                                    (authorHit ? 'Author ' : ''),
+                                    post.data.shortUrl));
+
+                                return knex('posts').where({
+                                        id: post.data.id
+                                    }).count()
+                                    .then(isHit)
+                                    .then(function(alreadyNotified) {
+                                        if (!alreadyNotified) {
+                                            if (!argv.notify || notificationCount > argv.threshold) {
+                                                logger.info('Skipping notifications: supressed via commandline or threshold met.');
+                                                return insertPost(post.data.id, new Date(), '', '');
+                                            }
+                                            else {
+                                                var compiled = _.template(argv.template);
+                                                var notificationMessage = compiled(post);
+                                                logger.info('Notifying. Message: ' + notificationMessage);
+                                                return sns.publish({
+                                                    Message: notificationMessage,
+                                                    TopicArn: argv.topicarn
+                                                }).promise().then(function(snsResponse) {
+                                                    notificationCount++;
+                                                    return insertPost(post.data.id, new Date(), snsResponse.MessageId, snsResponse.ResponseMetadata.RequestId);
+                                                });
+                                            }
+                                        }
+                                        else {
+                                            logger.info('Skipping notifications: already notified.');
+                                        }
+                                    });
+                            }
+                        })
+                    })
+                    .then(function() {
+                        if(requestCount < argv.traverse){
+                            logger.info('Requesting page ' + (requestCount + 1));
+                            lastPostId = _.last(response.body.data.children).data.id;
+                            return execute(lastPostId);
+                        } else {
+                            process.exit();
+                        }
+                    })
+                    .catch(function(err) {
+                        logger.error(err);
+                    });
             })
-            .catch(function(err) {
-                logger.error(err);
-            });
-    });
-}, argv.delay);
+
+    }, argv.delay);
+}
 
 function insertPost(postId, createdAt, requestId, messageId) {
     return knex('posts').insert({

@@ -49,3 +49,4 @@ jspm_packages
 dev.sqlite3
 
 config.json
+config.json*

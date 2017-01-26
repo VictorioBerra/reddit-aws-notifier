@@ -6,7 +6,6 @@ var winston = require("winston");
 var Promise = require("bluebird");
 var AWS = require("aws-sdk");
 var format = require("util").format;
-const url = require('url');
 
 var argv = require('yargs')
     .options(require('./lib/options.js'))
@@ -64,8 +63,8 @@ function execute(lastPostId) {
                             var expression = new RegExp(argv.expression, argv.expressionOptions);
 
                             var titleHit = argv.title && post.data.title.match(expression) != null;
-                            var selfTextHit = argv.selftext && post.data.title.match(expression) != null;
-                            var authorHit = argv.author && post.data.title.match(expression) != null;
+                            var selfTextHit = argv.selftext && post.data.selftext.match(expression) != null;
+                            var authorHit = argv.author && post.data.author.match(expression) != null;
 
                             if (titleHit || selfTextHit || authorHit) {
                                 post.data.shortUrl = format('https://redd.it/%s', post.data.id);

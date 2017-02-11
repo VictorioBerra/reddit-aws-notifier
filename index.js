@@ -4,14 +4,15 @@ var _ = require("lodash");
 var bhttp = require("bhttp");
 var winston = require("winston");
 var Promise = require("bluebird");
-var AWS = require("aws-sdk");
+var AWS = null;
+var nodemailer = require('nodemailer');
 var format = require("util").format;
 
 var argv = require('yargs')
     .options(require('./lib/options.js'))
     .config()
     .usage('Search subreddits for an expression, and send an AWS SNS notification for hits.')
-    .example('$0 -subreddit="aww" -expression="doggo" 22')
+    .example('$0 -subreddit="aww" -expression="doggo" -notify="true" -topicarn="arn:aws:sns:us-east-1:0000:r-subreddit-notify-app"')
     .argv;
 
 var loggerTransports = [
@@ -28,17 +29,28 @@ var logger = new(winston.Logger)({
     transports: loggerTransports
 });
 
+var transporter;
+if (argv.email) {
+    transporter = nodemailer.createTransport({
+        sendmail: true,
+        newline: 'unix',
+        path: '/usr/sbin/sendmail'
+    });
+}
+else {
+    AWS = require("aws-sdk");
+    AWS.config.setPromisesDependency(require('bluebird'));
+    if (!argv.nofity) {
+        var sns = new AWS.SNS({
+            region: argv.awsregion
+        });
+    }
+}
+
 var notificationCount = 0;
 var requestCount = 0;
 
 var knex = require("knex")(require(argv.knexfile)[process.env.NODE_ENV || 'development']);
-
-AWS.config.setPromisesDependency(require('bluebird'));
-if (!argv.nofity) {
-    var sns = new AWS.SNS({
-        region: argv.awsregion
-    });
-}
 
 knex.migrate.latest().then(function() {
     execute();
@@ -88,13 +100,31 @@ function execute(lastPostId) {
                                                 var compiled = _.template(argv.template);
                                                 var notificationMessage = compiled(post);
                                                 logger.info('Notifying. Message: ' + notificationMessage);
-                                                return sns.publish({
-                                                    Message: notificationMessage,
-                                                    TopicArn: argv.topicarn
-                                                }).promise().then(function(snsResponse) {
-                                                    notificationCount++;
-                                                    return insertPost(post.data.id, new Date(), snsResponse.MessageId, snsResponse.ResponseMetadata.RequestId);
-                                                });
+
+                                                if (transporter) {
+                                                    var emails = argv.email;
+                                                    if (!_.isArray(argv.email)) {
+                                                        emails = [argv.email];
+                                                    }
+                                                    return transporter.sendMail({
+                                                        from: 'toryberra@gmail.com',
+                                                        to: emails.join(', '),
+                                                        subject: 'reddit notifier',
+                                                        text: notificationMessage
+                                                    }).then(function() {
+                                                        return insertPost(post.data.id, new Date(), null, null);
+                                                    });
+                                                }
+                                                else {
+                                                    return sns.publish({
+                                                        Message: notificationMessage,
+                                                        TopicArn: argv.topicarn
+                                                    }).promise().then(function(snsResponse) {
+                                                        notificationCount++;
+                                                        return insertPost(post.data.id, new Date(), snsResponse.MessageId, snsResponse.ResponseMetadata.RequestId);
+                                                    });
+                                                }
+
                                             }
                                         }
                                         else {
@@ -105,11 +135,12 @@ function execute(lastPostId) {
                         })
                     })
                     .then(function() {
-                        if(requestCount < argv.traverse){
+                        if (requestCount < argv.traverse) {
                             logger.info('Requesting page ' + (requestCount + 1));
                             lastPostId = _.last(response.body.data.children).data.id;
                             return execute(lastPostId);
-                        } else {
+                        }
+                        else {
                             process.exit();
                         }
                     })

@@ -11,7 +11,7 @@ var argv = require('yargs')
     .options(require('./lib/options.js'))
     .config()
     .usage('Search subreddits for an expression, and send an AWS SNS notification for hits.')
-    .example('$0 -subreddit="aww" -expression="doggo" 22')
+    .example('$0 -subreddit="aww" -expression="doggo" -notify="true" -topicarn="arn:aws:sns:us-east-1:0000:r-subreddit-notify-app"')
     .argv;
 
 var loggerTransports = [

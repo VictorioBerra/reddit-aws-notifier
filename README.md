@@ -40,8 +40,8 @@ Examples:
 
 ### Notes
 - If you dont specify a knexfile, it will try to use the internal development one which requires you to install sqlite3.
-- Automate with [forever](https://github.com/foreverjs/forever).
-- The template options are the same options found on Reddit JOSN data.children.
+- Automate with [PM2](http://pm2.keymetrics.io/) or [forever](https://github.com/foreverjs/forever).
+- The template options are the same options found on Reddit JSON data.children.
 
 ### License
 ISC

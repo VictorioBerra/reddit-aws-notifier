@@ -107,7 +107,6 @@ function execute(lastPostId) {
                                                         emails = [argv.email];
                                                     }
                                                     return transporter.sendMail({
-                                                        from: 'toryberra@gmail.com',
                                                         to: emails.join(', '),
                                                         subject: 'reddit notifier',
                                                         text: notificationMessage
